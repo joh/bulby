@@ -5,9 +5,10 @@
 
 #include "hsv.h"
 
-#define RED 5
-#define GREEN 6
-#define BLUE 9
+#define RED_PIN 10
+#define GREEN_PIN 6
+#define BLUE_PIN 9
+#define TONE_PIN 8
 
 #define BUF_SIZE 128
 #define PROMPT "> "
@@ -45,79 +46,23 @@ int println(const char *format, ...)
     return Serial.println(tmp);
 }
 
-/*
- * Parse input line
- */
-void parse(char *line)
+void set_color(int r, int g, int b)
 {
-    char *command;
-    char *arg;
-    const char *delim = " \n\r";
-
-    int i, n;
-    int r, g, b;
-
-    command = strtok(line, delim);
-
-    if (NULL == command) return;
-
-    if (0 == strcmp(command, "color"))
-    {
-        arg = strtok(NULL, delim);
-        if (NULL == arg) goto err_args_missing;
-        red = atoi(arg);
-
-        arg = strtok(NULL, delim);
-        if (NULL == arg) goto err_args_missing;
-        green = atoi(arg);
-
-        arg = strtok(NULL, delim);
-        if (NULL == arg) goto err_args_missing;
-        blue = atoi(arg);
-
-        set_color(red, green, blue);
-        return;
-    }
-
-    if (0 == strcmp(command, "help"))
-    {
-        println("Available commands:");
-        println("  color <r> <g> <b>");
-        println("  help");
-        return;
-    }
-
-    println("Unrecognized command: '%s'", command);
-    goto err_help;
-
-err_args_missing:
-    println("%s: not enough arguments", command);
-
-err_help:
-    println("Try 'help'");
-
-}
-
-void setup() {
-    pinMode(RED, OUTPUT);
-    pinMode(GREEN, OUTPUT);
-    pinMode(BLUE, OUTPUT);
-
-    randomSeed(analogRead(0));
-
-    /*hue_cycle();*/
-
-    Serial.begin(57600);
-}
-
-void set_color(int r, int g, int b) {
     r = constrain(r, 0, 255);
     g = constrain(g, 0, 255);
     b = constrain(b, 0, 255);
 
-    analogWrite(RED, r);
-    analogWrite(GREEN, g);
-    analogWrite(BLUE, b);
+    analogWrite(RED_PIN, r);
+    analogWrite(GREEN_PIN, g);
+    analogWrite(BLUE_PIN, b);
+}
+
+void set_tone(unsigned int freq)
+{
+    if (0 == freq)
+        noTone(TONE_PIN);
+    else
+        tone(TONE_PIN, freq);
 }
 
 void set_color_hsv(int h, int s, int v) {
@@ -175,6 +120,80 @@ void hue_cycle() {
 //    HSVtoRGB(&r, &g, &b, 359, 255, 255);
 
 //    fade_out(r, g, b);
+}
+
+/*
+ * Parse input line
+ */
+void parse(char *line)
+{
+    char *command;
+    char *arg;
+    const char *delim = " \n\r";
+
+    int i, n;
+    int r, g, b, freq;
+
+    command = strtok(line, delim);
+
+    if (NULL == command) return;
+
+    if (0 == strcmp(command, "color")) {
+        arg = strtok(NULL, delim);
+        if (NULL == arg) goto err_args_missing;
+        red = atoi(arg);
+
+        arg = strtok(NULL, delim);
+        if (NULL == arg) goto err_args_missing;
+        green = atoi(arg);
+
+        arg = strtok(NULL, delim);
+        if (NULL == arg) goto err_args_missing;
+        blue = atoi(arg);
+
+        set_color(red, green, blue);
+        return;
+    }
+
+    if (0 == strcmp(command, "tone")) {
+        arg = strtok(NULL, delim);
+        if (NULL == arg) goto err_args_missing;
+        freq = atoi(arg);
+
+        set_tone(freq);
+        return;
+    }
+
+    if (0 == strcmp(command, "help")) {
+        println("Available commands:");
+        println("  color <r> <g> <b>");
+        println("  tone <freq>");
+        println("  help");
+        return;
+    }
+
+    println("Unrecognized command: '%s'", command);
+    goto err_help;
+
+err_args_missing:
+    println("%s: not enough arguments", command);
+
+err_help:
+    println("Try 'help'");
+
+}
+
+void setup() {
+    pinMode(RED_PIN, OUTPUT);
+    pinMode(GREEN_PIN, OUTPUT);
+    pinMode(BLUE_PIN, OUTPUT);
+    pinMode(TONE_PIN, OUTPUT);
+
+    randomSeed(analogRead(0));
+
+    /*hue_cycle();*/
+
+    Serial.begin(57600);
 }
 
 void loop() {

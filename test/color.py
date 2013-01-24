@@ -24,6 +24,10 @@ while True:
         #print time.strftime("%H:%M:%S"), line
         ser.write(line)
         ser.flushInput()
+
+        line = "tone %d\r" % (360 - h)
+        ser.write(line)
+        ser.flushInput()
         #m.send(line)
         #m.expect("> ")
 
