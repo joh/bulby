@@ -214,14 +214,32 @@ void loop() {
             buf_pos = 0;
 
             Serial.print(PROMPT);
-        } else {
-            /* TODO: Control characters */
+        } else if (c >= 0x20 && c < 0x7f) {
+            /* Visible character */
             buf[buf_pos] = c;
             buf_pos = (buf_pos + 1) % BUF_SIZE;
             Serial.print(c);
-        }
+        } else if (c == 0x03 || c == 0x04) {
+            /* Ctrl-C or Ctrl-D */
+            buf[0] = '\0';
+            buf_pos = 0;
 
+            Serial.println();
+            Serial.print(PROMPT);
+        } else if (c == 0x7f && buf_pos > 0) {
+            /* Backspace */
+            buf[buf_pos] = '\0';
+            buf_pos--;
+
+            Serial.write(0x1b); // Move back 1 char
+            Serial.write("[D");
+            Serial.write(" ");  // print space
+            Serial.write(0x1b); // Move back 1 char
+            Serial.write("[D");
+        } else {
+            /* Unknown character */
+            //Serial.println(c, HEX);
+        }
     }
-    /*hue_cycle();*/
 }
 
