@@ -32,6 +32,17 @@ class Bulby(object):
     def color(self, red, green, blue):
         self.command('color', red, green, blue)
 
+    def blink(self, red, green, blue, frequency):
+        period = 1. / frequency
+        try:
+            while True:
+                self.color(red, green, blue)
+                time.sleep(period)
+                self.color(0, 0, 0)
+                time.sleep(period)
+        except KeyboardInterrupt:
+            self.color(0, 0, 0)
+
     def tone(self, frequency):
         self.command('tone', frequency)
 
@@ -65,18 +76,33 @@ def main():
 
     subparsers = parser.add_subparsers()
 
-    parser_color = subparsers.add_parser('color', help='set color')
-    parser_color.add_argument('red', type=IntRange(0, 255),
-                              help='blazing red [0, 255]')
-    parser_color.add_argument('green', type=IntRange(0, 255),
-                              help='lush green [0, 255]')
-    parser_color.add_argument('blue', type=IntRange(0, 255),
-                              help='cool blue [0, 255]')
-    parser_color.set_defaults(command='color')
+    # color <red> <green> <blue>
+    sp = subparsers.add_parser('color', help='set color')
+    sp.add_argument('red', type=IntRange(0, 255),
+                    help='blazing red [0, 255]')
+    sp.add_argument('green', type=IntRange(0, 255),
+                    help='lush green [0, 255]')
+    sp.add_argument('blue', type=IntRange(0, 255),
+                    help='cool blue [0, 255]')
+    sp.set_defaults(command='color')
 
-    parser_color = subparsers.add_parser('tone', help='play tone')
-    parser_color.add_argument('frequency', type=IntRange(0, 0xffff), help='tone frequency in Hz')
-    parser_color.set_defaults(command='tone')
+    # tone <frequency>
+    sp = subparsers.add_parser('tone', help='play tone')
+    sp.add_argument('frequency', type=IntRange(0, 0xffff),
+                    help='tone frequency in Hz')
+    sp.set_defaults(command='tone')
+
+    # blink [-f frequency] <red> <green> <blue>
+    sp = subparsers.add_parser('blink', help='blink color')
+    sp.add_argument('red', type=IntRange(0, 255),
+                    help='blazing red [0, 255]')
+    sp.add_argument('green', type=IntRange(0, 255),
+                    help='lush green [0, 255]')
+    sp.add_argument('blue', type=IntRange(0, 255),
+                    help='cool blue [0, 255]')
+    sp.add_argument('-f', '--frequency', type=float, default=1.0, metavar='F',
+                    help='blink frequency in Hz (default: %(default)s Hz)')
+    sp.set_defaults(command='blink')
 
     args = parser.parse_args()
 
@@ -92,6 +118,8 @@ def main():
             bulby.color(args.red, args.green, args.blue)
         elif args.command == 'tone':
             bulby.tone(args.frequency)
+        elif args.command == 'blink':
+            bulby.blink(args.red, args.green, args.blue, args.frequency)
         else:
             raise "This should never happen!"
 
