@@ -9,6 +9,7 @@ import colorsys
 import serial
 import time
 import glob
+import re
 
 class Bulby(object):
     def __init__(self, dev, baud=57600):
@@ -51,6 +52,65 @@ class Bulby(object):
             self.ser.close()
 
 
+class Color(object):
+    color_names = {
+        'red':    (255, 0, 0),
+        'green':  (0, 255, 0),
+        'blue':   (0, 0, 255),
+        'yellow': (255, 255, 0),
+        'purple': (255, 0, 255),
+        'cyan':   (0, 255, 255),
+        'white':  (255, 255, 255),
+        'black':  (0, 0, 0),
+    }
+
+    def __init__(self):
+        pass
+
+    def __call__(self, arg):
+        return self.parse_color(arg)
+
+    def parse_color(self, color_string):
+        # hsv(h, s, v)
+        # red/green/blue/...
+        # #ff0000
+        rgb_range = IntRange(0, 255)
+        hue_range = IntRange(0, 360)
+        sat_range = IntRange(0, 100)
+        val_range = IntRange(0, 100)
+
+        # r g b
+        m = re.match(r'^(\d+) (\d+) (\d+)$', color_string)
+        if m:
+            return map(rgb_range, m.groups())
+
+        # rgb(r, g, b)
+        m = re.match(r'^rgb\s*\((\d+),\s*(\d+),\s*(\d+)\)$', color_string)
+        if m:
+            return map(rgb_range, m.groups())
+
+        # #rrggbb
+        m = re.match(r'^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$', color_string)
+        if m:
+            rgb = map(lambda h: int(h, 16), m.groups())
+            return rgb
+
+        # hsv(h, s, v)
+        m = re.match(r'^hsv\s*\((\d+),\s*(\d+),\s*(\d+)\)$', color_string)
+        if m:
+            hsv = (hue_range(m.group(1)) / 360.,
+                   sat_range(m.group(2)) / 100.,
+                   val_range(m.group(3)) / 100.)
+            rgb = colorsys.hsv_to_rgb(*hsv)
+            rgb = map(lambda i: int(i * 255), rgb)
+            return rgb
+
+        # color names
+        if color_string in self.color_names:
+            return self.color_names[color_string]
+
+        message = "unrecognized color '{}'".format(color_string)
+        raise argparse.ArgumentTypeError(message)
 
 class IntRange(object):
     def __init__(self, min, max):
@@ -78,12 +138,8 @@ def main():
 
     # color <red> <green> <blue>
     sp = subparsers.add_parser('color', help='set color')
-    sp.add_argument('red', type=IntRange(0, 255),
-                    help='blazing red [0, 255]')
-    sp.add_argument('green', type=IntRange(0, 255),
-                    help='lush green [0, 255]')
-    sp.add_argument('blue', type=IntRange(0, 255),
-                    help='cool blue [0, 255]')
+    sp.add_argument('color', type=Color(),
+                    help='the color e.g. red, #ff0000, rgb(255,0,0), ...')
     sp.set_defaults(command='color')
 
     # tone <frequency>
@@ -94,12 +150,8 @@ def main():
 
     # blink [-f frequency] <red> <green> <blue>
     sp = subparsers.add_parser('blink', help='blink color')
-    sp.add_argument('red', type=IntRange(0, 255),
-                    help='blazing red [0, 255]')
-    sp.add_argument('green', type=IntRange(0, 255),
-                    help='lush green [0, 255]')
-    sp.add_argument('blue', type=IntRange(0, 255),
-                    help='cool blue [0, 255]')
+    sp.add_argument('color', type=Color(),
+                    help='the color e.g. red, #ff0000, rgb(255,0,0), ...')
     sp.add_argument('-f', '--frequency', type=float, default=1.0, metavar='F',
                     help='blink frequency in Hz (default: %(default)s Hz)')
     sp.set_defaults(command='blink')
@@ -115,11 +167,11 @@ def main():
         bulby = Bulby(device)
 
         if args.command == 'color':
-            bulby.color(args.red, args.green, args.blue)
+            bulby.color(*args.color)
+        elif args.command == 'blink':
+            bulby.blink(*args.color, frequency=args.frequency)
         elif args.command == 'tone':
             bulby.tone(args.frequency)
-        elif args.command == 'blink':
-            bulby.blink(args.red, args.green, args.blue, args.frequency)
         else:
             raise "This should never happen!"
 
