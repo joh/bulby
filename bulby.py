@@ -175,9 +175,8 @@ def main():
         else:
             raise "This should never happen!"
 
-    except Exception as e:
-        print e
-        exit(1)
+    except KeyboardInterrupt:
+        pass
 
 if __name__ == '__main__':
     main()
