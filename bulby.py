@@ -10,6 +10,7 @@ import serial
 import time
 import glob
 import re
+import itertools
 
 class Bulby(object):
     def __init__(self, dev, baud=57600):
@@ -33,19 +34,38 @@ class Bulby(object):
     def color(self, red, green, blue):
         self.command('color', red, green, blue)
 
-    def blink(self, red, green, blue, frequency):
-        period = 1. / frequency
-        try:
-            while True:
-                self.color(red, green, blue)
-                time.sleep(period)
-                self.color(0, 0, 0)
-                time.sleep(period)
-        finally:
-            self.color(0, 0, 0)
-
     def tone(self, frequency):
         self.command('tone', frequency)
+
+    def reset(self):
+        self.color(0, 0, 0)
+        self.tone(0)
+
+    def do(self, commands):
+        try:
+            for item in commands:
+                #print item
+                cmd = item[0]
+                args = item[1:]
+                if cmd == 'sleep':
+                    time.sleep(args[0])
+                elif cmd == 'color':
+                    self.color(*args)
+                elif cmd == 'tone':
+                    self.tone(*args)
+                else:
+                    print "Warning: Invalid command '{}'".format(item)
+        finally:
+            self.reset()
+
+    def blink(self, red, green, blue, frequency):
+        period = 1. / frequency
+        cmds = [('color', red, green, blue),
+                ('sleep', period),
+                ('color', 0, 0, 0),
+                ('sleep', period)]
+
+        self.do(itertools.cycle(cmds))
 
     def __del__(self):
         if self.ser:
