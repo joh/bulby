@@ -41,7 +41,7 @@ class Bulby(object):
                 time.sleep(period)
                 self.color(0, 0, 0)
                 time.sleep(period)
-        except KeyboardInterrupt:
+        finally:
             self.color(0, 0, 0)
 
     def tone(self, frequency):
