@@ -96,31 +96,39 @@ class Bulby(object):
         self.color(0, 0, 0)
         self.tone(0)
 
-    def do(self, commands):
+    def do(self, commands, count=1):
         try:
-            for item in commands:
-                #print item
-                cmd = item[0]
-                args = item[1:]
-                if cmd == 'sleep':
-                    time.sleep(args[0])
-                elif cmd == 'color':
-                    self.color(*args)
-                elif cmd == 'tone':
-                    self.tone(*args)
-                else:
-                    print "Warning: Invalid command '{}'".format(item)
+            if count < 0:
+                while True:
+                    self.do_commands(commands)
+            else:
+                for _ in xrange(count):
+                    self.do_commands(commands)
         finally:
             self.reset()
 
-    def blink(self, red, green, blue, frequency):
+    def do_commands(self, commands):
+        for item in commands:
+            #print item
+            cmd = item[0]
+            args = item[1:]
+            if cmd == 'sleep':
+                time.sleep(args[0])
+            elif cmd == 'color':
+                self.color(*args)
+            elif cmd == 'tone':
+                self.tone(*args)
+            else:
+                print "Warning: Invalid command '{}'".format(item)
+
+    def blink(self, red, green, blue, frequency=2, count=-1):
         period = 1. / frequency
         cmds = [('color', red, green, blue),
                 ('sleep', period),
                 ('color', 0, 0, 0),
                 ('sleep', period)]
 
-        self.do(itertools.cycle(cmds))
+        self.do(cmds, count)
 
 
 class Color(object):
@@ -223,8 +231,10 @@ def main():
     sp = subparsers.add_parser('blink', help='blink color')
     sp.add_argument('color', type=Color(),
                     help='the color e.g. red, #ff0000, rgb(255,0,0), ...')
-    sp.add_argument('-f', '--frequency', type=float, default=1.0, metavar='F',
+    sp.add_argument('-f', '--frequency', type=float, default=2.0, metavar='F',
                     help='blink frequency in Hz (default: %(default)s Hz)')
+    sp.add_argument('-n', '--times', type=int, default=-1, metavar='N',
+                    help='number of times to blink, N<0 blinks forever (default: %(default)s)')
     sp.set_defaults(command='blink')
 
     # D-bus service
@@ -251,7 +261,7 @@ def main():
             if args.command == 'color':
                 bulby.color(*args.color)
             elif args.command == 'blink':
-                bulby.blink(*args.color, frequency=args.frequency)
+                bulby.blink(*args.color, frequency=args.frequency, count=args.times)
             elif args.command == 'tone':
                 bulby.tone(args.frequency)
             else:
