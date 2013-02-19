@@ -11,15 +11,38 @@ import time
 import glob
 import re
 import itertools
+import glib
+import dbus
+import dbus.service
+import dbus.mainloop.glib
 
-class Bulby(object):
+def constrain(val, vmin, vmax):
+    return min(max(val, vmin), vmax)
+
+class BulbyService(dbus.service.Object):
+    bus_name = 'com.pseudoberries.Bulby'
+    object_path = '/com/pseudoberries/Bulby'
+
+    valid_commands = ('color', 'tone')
+
     def __init__(self, dev, baud=57600):
         self.dev = dev
         self.baud = baud
         self.ser = None
 
+        # TODO: Check serial lock
         self.ser = serial.Serial(self.dev, self.baud, timeout=5)
         self.ser.open()
+
+        self.mainloop = glib.MainLoop()
+
+        # Set up D-Bus service
+        dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+        bus = dbus.service.BusName(self.bus_name,
+                                   bus=dbus.SessionBus(),
+                                   replace_existing=True)
+
+        super(BulbyService, self).__init__(bus, self.object_path)
 
     def command(self, command, *args):
         args = map(str, args)
@@ -31,11 +54,43 @@ class Bulby(object):
         self.ser.write(line)
         self.ser.flushInput()
 
+    def reset(self):
+        self.command('color', 0, 0, 0)
+        self.command('tone', 0)
+
+    @dbus.service.method('com.pseudoberries.Bulby', in_signature='uuu')
     def color(self, red, green, blue):
+        red = constrain(red, 0, 255)
+        green = constrain(green, 0, 255)
+        blue = constrain(blue, 0, 255)
+
         self.command('color', red, green, blue)
 
+    @dbus.service.method('com.pseudoberries.Bulby', in_signature='u')
     def tone(self, frequency):
         self.command('tone', frequency)
+
+    def main(self):
+        try:
+            self.mainloop.run()
+        finally:
+            self.reset()
+
+    def __del__(self):
+        if self.ser:
+            self.ser.close()
+
+
+class Bulby(object):
+    def __init__(self):
+        bus = dbus.SessionBus()
+
+        bus_name = BulbyService.bus_name
+        object_path = BulbyService.object_path
+
+        self.bulby_service = bus.get_object(bus_name, object_path)
+        self.color = self.bulby_service.get_dbus_method('color', bus_name)
+        self.tone = self.bulby_service.get_dbus_method('tone', bus_name)
 
     def reset(self):
         self.color(0, 0, 0)
@@ -66,10 +121,6 @@ class Bulby(object):
                 ('sleep', period)]
 
         self.do(itertools.cycle(cmds))
-
-    def __del__(self):
-        if self.ser:
-            self.ser.close()
 
 
 class Color(object):
@@ -132,6 +183,7 @@ class Color(object):
         message = "unrecognized color '{}'".format(color_string)
         raise argparse.ArgumentTypeError(message)
 
+
 class IntRange(object):
     def __init__(self, min, max):
         self.min = min
@@ -149,10 +201,9 @@ class IntRange(object):
 
         return value
 
+
 def main():
     parser = argparse.ArgumentParser(description='Bulby: single pixel display')
-    parser.add_argument('-d', '--device', metavar='DEV', default='/dev/ttyACM*',
-                        help='tty device where Bulby resides (default: %(default)s)')
 
     subparsers = parser.add_subparsers()
 
@@ -176,24 +227,35 @@ def main():
                     help='blink frequency in Hz (default: %(default)s Hz)')
     sp.set_defaults(command='blink')
 
+    # D-bus service
+    sp = subparsers.add_parser('daemon', help='start D-bus service')
+    sp.set_defaults(command='daemon')
+    sp.add_argument('-d', '--device', metavar='DEV', default='/dev/ttyACM*',
+                    help='tty device where Bulby resides (default: %(default)s)')
+
     args = parser.parse_args()
 
     try:
-        device = glob.glob(args.device)[0]
-    except IndexError:
-        device = args.device
+        if args.command == 'daemon':
+            try:
+                device = glob.glob(args.device)[0]
+            except IndexError:
+                device = args.device
 
-    try:
-        bulby = Bulby(device)
+            service = BulbyService(device)
+            service.main()
 
-        if args.command == 'color':
-            bulby.color(*args.color)
-        elif args.command == 'blink':
-            bulby.blink(*args.color, frequency=args.frequency)
-        elif args.command == 'tone':
-            bulby.tone(args.frequency)
         else:
-            raise "This should never happen!"
+            bulby = Bulby()
+
+            if args.command == 'color':
+                bulby.color(*args.color)
+            elif args.command == 'blink':
+                bulby.blink(*args.color, frequency=args.frequency)
+            elif args.command == 'tone':
+                bulby.tone(args.frequency)
+            else:
+                raise "This should never happen!"
 
     except KeyboardInterrupt:
         pass
