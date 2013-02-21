@@ -10,6 +10,7 @@ import serial
 import time
 import glob
 import re
+import math
 import itertools
 import glib
 import dbus
@@ -18,6 +19,24 @@ import dbus.mainloop.glib
 
 def constrain(val, vmin, vmax):
     return min(max(val, vmin), vmax)
+
+def frange(start, stop=None, step=1):
+    if None is stop:
+        stop = start
+        start = 0
+
+    num = int(math.ceil((stop - start) / float(step)))
+
+    return [start + i * step for i in xrange(num)]
+
+def linspace(start, stop, num=256):
+    if start == stop:
+        return list(itertools.repeat(start, num))
+
+    step = (stop - start) / float(num-1)
+
+    return frange(start, stop + step, step)
+
 
 class BulbyService(dbus.service.Object):
     bus_name = 'com.pseudoberries.Bulby'
@@ -75,9 +94,6 @@ class BulbyService(dbus.service.Object):
             self.mainloop.run()
         finally:
             self.reset()
-
-    def __del__(self):
-        if self.ser:
             self.ser.close()
 
 
@@ -129,6 +145,39 @@ class Bulby(object):
                 ('sleep', period)]
 
         self.do(cmds, count)
+
+    def fade(self, from_color, to_color, speed=1, direction='in', count=-1):
+        """ Fade from from_color to to_color
+
+        Intermediate values are linearly interpolated
+        """
+        assert direction in ('in', 'out', 'inout')
+
+        steps = 256
+        period = (1. / speed) / steps
+
+        if direction == 'out':
+            from_color, to_color = to_color, from_color
+
+        r0, g0, b0 = from_color
+        r1, g1, b1 = to_color
+
+        reds = linspace(r0, r1, steps)
+        greens = linspace(g0, g1, steps)
+        blues = linspace(b0, b1, steps)
+
+        if direction == 'inout':
+            reds += linspace(r1, r0, steps)
+            greens += linspace(g1, g0, steps)
+            blues += linspace(b1, b0, steps)
+            steps *= 2
+
+        commands = []
+        for i in xrange(steps):
+            commands.append(('color', reds[i], greens[i], blues[i]))
+            commands.append(('sleep', period))
+
+        self.do(commands, count)
 
 
 class Color(object):
@@ -237,6 +286,21 @@ def main():
                     help='number of times to blink, N<0 blinks forever (default: %(default)s)')
     sp.set_defaults(command='blink')
 
+    # fade [-s speed] [-d direction] [-n times] from_color to_color
+    sp = subparsers.add_parser('fade', help='fade in color')
+    sp.add_argument('color1', type=Color(),
+                    help='the first color e.g. red, #ff0000, rgb(255,0,0), ...')
+    sp.add_argument('color2', type=Color(),
+                    help='the second color e.g. red, #ff0000, rgb(255,0,0), ...')
+    sp.add_argument('-s', '--speed', type=float, default=1.0, metavar='S',
+                    help='fade speed in 1/s (default: %(default)s)')
+    sp.add_argument('-d', '--direction', type=str, metavar='D',
+                    choices=('in', 'out', 'inout'), default='in',
+                    help='fade direction: in, out or inout (default: %(default)s)')
+    sp.add_argument('-n', '--times', type=int, default=-1, metavar='N',
+                    help='number of times to fade in, N<0 fades forever (default: %(default)s)')
+    sp.set_defaults(command='fade')
+
     # D-bus service
     sp = subparsers.add_parser('daemon', help='start D-bus service')
     sp.set_defaults(command='daemon')
@@ -262,6 +326,8 @@ def main():
                 bulby.color(*args.color)
             elif args.command == 'blink':
                 bulby.blink(*args.color, frequency=args.frequency, count=args.times)
+            elif args.command == 'fade':
+                bulby.fade(args.color1, args.color2, args.speed, args.direction, args.times)
             elif args.command == 'tone':
                 bulby.tone(args.frequency)
             else:
