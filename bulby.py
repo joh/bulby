@@ -300,11 +300,16 @@ class Bulby(object):
             else:
                 print "Warning: Invalid command '{}'".format(item)
 
-    def blink(self, red, green, blue, frequency=2, count=-1):
+    def blink(self, from_color, to_color=None, frequency=2, count=-1):
+        """ Blink from from_color to to_color """
+        if not to_color:
+            ctype = type(from_color)
+            to_color = ctype(rgb((0, 0, 0)))
+
         period = 1. / frequency
-        cmds = [('color', red, green, blue),
+        cmds = [('color', from_color),
                 ('sleep', period),
-                ('color', 0, 0, 0),
+                ('color', to_color),
                 ('sleep', period)]
 
         self.do(cmds, count)
@@ -388,8 +393,10 @@ def main():
 
     # blink [-f frequency] <red> <green> <blue>
     sp = subparsers.add_parser('blink', help='blink color')
-    sp.add_argument('color', type=Color(),
-                    help='the color e.g. red, #ff0000, rgb(255,0,0), ...')
+    sp.add_argument('color1', type=Color(),
+                    help='the first color e.g. red, #ff0000, rgb(1.0, 0, 0) hsv(red), ...')
+    sp.add_argument('color2', type=Color(), nargs='?', default=rgb((0, 0, 0)),
+                    help='the second color (default: black)')
     sp.add_argument('-f', '--frequency', type=float, default=2.0, metavar='F',
                     help='blink frequency in Hz (default: %(default)s Hz)')
     sp.add_argument('-n', '--times', type=int, default=-1, metavar='N',
@@ -435,7 +442,7 @@ def main():
             if args.command == 'color':
                 bulby.color(*args.color)
             elif args.command == 'blink':
-                bulby.blink(*args.color, frequency=args.frequency, count=args.times)
+                bulby.blink(args.color1, args.color2, args.frequency, args.times)
             elif args.command == 'fade':
                 bulby.fade(args.color1, args.color2, args.speed, args.direction, args.times)
             elif args.command == 'tone':
