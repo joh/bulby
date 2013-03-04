@@ -324,7 +324,6 @@ class Bulby(object):
 
         ctype = type(from_color)
         steps = 256
-        period = (1. / speed) / steps
 
         if direction == 'out':
             from_color, to_color = to_color, from_color
@@ -337,6 +336,7 @@ class Bulby(object):
             steps = (steps * 2) - 1
 
         commands = []
+        period = (1. / speed) / steps
         for i in xrange(steps):
             color = ctype(values[i])
             commands.append(('color', color))
