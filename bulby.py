@@ -4,6 +4,10 @@
 #
 # See README for details
 #
+# TODO list:
+#  - Animation framework (easing etc)
+#  - Melody play support
+#
 import argparse
 import colorsys
 import serial
@@ -16,6 +20,10 @@ import glib
 import dbus
 import dbus.service
 import dbus.mainloop.glib
+
+#
+# Misc utils
+#
 
 def constrain(val, vmin, vmax):
     return min(max(val, vmin), vmax)
@@ -36,6 +44,150 @@ def linspace(start, stop, num=256):
     step = (stop - start) / float(num-1)
 
     return frange(start, stop + step, step)
+
+#
+# Color systems
+#
+
+def guess_dtype(data):
+    if any(type(x) is float for x in data):
+        return float
+    else:
+        return int
+
+class rgb(tuple):
+    def __new__(cls, val, dtype=None):
+        try:
+            r, g, b = val.to_rgb()
+        except (AttributeError, TypeError):
+            r, g, b = val
+            if not dtype:
+                dtype = guess_dtype(val)
+
+            if dtype is int:
+                r = r / 255.
+                g = g / 255.
+                b = b / 255.
+
+            r = constrain(r, 0, 1)
+            g = constrain(g, 0, 1)
+            b = constrain(b, 0, 1)
+
+        return super(rgb, cls).__new__(cls, (r, g, b))
+
+    def __repr__(self):
+        return 'rgb({}, {}, {})'.format(*self)
+
+    def to_rgb(self):
+        return self
+
+class hsv(tuple):
+    def __new__(cls, val, dtype=None):
+        try:
+            r, g, b = val.to_rgb()
+            h, s, v = colorsys.rgb_to_hsv(r, g, b)
+        except (AttributeError, TypeError):
+            h, s, v = val
+
+            if not dtype:
+                dtype = guess_dtype(val)
+
+            if dtype is int:
+                h = h / 360.
+                s = s / 100.
+                v = v / 100.
+
+        h = float(constrain(h, 0, 1))
+        s = float(constrain(s, 0, 1))
+        v = float(constrain(v, 0, 1))
+
+        return super(hsv, cls).__new__(cls, (h, s, v))
+
+    def __repr__(self):
+        return 'hsv({}, {}, {})'.format(*self)
+
+    def to_rgb(self):
+        return rgb(colorsys.hsv_to_rgb(*self))
+
+color_names = {
+    'red':    rgb((1.0, 0.0, 0.0)),
+    'green':  rgb((0.0, 1.0, 0.0)),
+    'blue':   rgb((0.0, 0.0, 1.0)),
+    'yellow': rgb((1.0, 1.0, 0.0)),
+    'purple': rgb((1.0, 0.0, 1.0)),
+    'cyan':   rgb((0.0, 1.0, 1.0)),
+    'white':  rgb((1.0, 1.0, 1.0)),
+    'black':  rgb((0.0, 0.0, 0.0)),
+}
+
+class ParseError(Exception):
+    pass
+
+def parse_color(color_string, ):
+    """ Parse color string
+
+    Supported formats:
+    color = colorsys , "(", value, ")"
+
+    colorsys = "rgb" | "hsv"
+
+    color := r, g, b
+    color := r g b
+    color := #rrggbb
+    color := red | green | blue | yellow | ...
+    """
+    # Default color system is RGB
+    color_type = rgb
+
+    #
+    # Color system, e.g. rgb(value)
+    #
+    m = re.match(r'(\w+)\s*\((.*)\)', color_string)
+    if m:
+        colorsystems = {'rgb': rgb, 'hsv': hsv}
+        colorsys = m.group(1)
+        if not colorsys in colorsystems:
+            raise ParseError("Unrecognized color system", colorsys)
+
+        color_type = colorsystems[colorsys]
+        color_string = m.group(2)
+
+    #
+    # Values separated by comma or space, e.g. "r, g, b"
+    #
+    m = re.match(r'.*[, ]+', color_string)
+    if m:
+        dtype = int
+        if "." in color_string:
+            dtype = float
+
+        values = re.split(r'[ ,]+', color_string)
+
+        try:
+            values = tuple(map(dtype, values))
+        except ValueError as e:
+            raise ParseError(*e.args)
+
+        return color_type(values)
+
+    #
+    # #rrggbb
+    #
+    m = re.match(r'#([0-9a-f]{6})', color_string, re.IGNORECASE)
+    if m:
+        d = int(m.group(1), 16)
+        r = (d >> 16) & 0xff
+        g = (d >> 8) & 0xff
+        b = d & 0xff
+        return color_type(rgb((r, g, b)))
+
+    #
+    # Color names, e.g. "blue"
+    #
+    if color_string in color_names:
+        return color_type(color_names[color_string])
+
+    raise ParseError("Unrecognized color: '{}'".format(color_string))
 
 
 class BulbyService(dbus.service.Object):
@@ -105,11 +257,22 @@ class Bulby(object):
         object_path = BulbyService.object_path
 
         self.bulby_service = bus.get_object(bus_name, object_path)
-        self.color = self.bulby_service.get_dbus_method('color', bus_name)
-        self.tone = self.bulby_service.get_dbus_method('tone', bus_name)
+        self._color = self.bulby_service.get_dbus_method('color', bus_name)
+        self._tone = self.bulby_service.get_dbus_method('tone', bus_name)
+
+    def color(self, color):
+        try:
+            r, g, b = color.to_rgb()
+        except (AttributeError, TypeError):
+            r, g, b = color
+
+        self._color(r * 255, g * 255, b * 255)
+
+    def tone(self, frequency):
+        self._tone(frequency)
 
     def reset(self):
-        self.color(0, 0, 0)
+        self.color((0, 0, 0))
         self.tone(0)
 
     def do(self, commands, count=1):
@@ -152,93 +315,40 @@ class Bulby(object):
         Intermediate values are linearly interpolated
         """
         assert direction in ('in', 'out', 'inout')
+        assert type(from_color) is type(to_color)
 
+        ctype = type(from_color)
         steps = 256
         period = (1. / speed) / steps
 
         if direction == 'out':
             from_color, to_color = to_color, from_color
 
-        r0, g0, b0 = from_color
-        r1, g1, b1 = to_color
-
-        reds = linspace(r0, r1, steps)
-        greens = linspace(g0, g1, steps)
-        blues = linspace(b0, b1, steps)
+        values = map(lambda (c0, c1): linspace(c0, c1, steps), zip(from_color, to_color))
+        values = zip(*values)
 
         if direction == 'inout':
-            reds += linspace(r1, r0, steps)
-            greens += linspace(g1, g0, steps)
-            blues += linspace(b1, b0, steps)
-            steps *= 2
+            values.extend(reversed(values[:-1]))
+            steps = (steps * 2) - 1
 
         commands = []
         for i in xrange(steps):
-            commands.append(('color', reds[i], greens[i], blues[i]))
+            color = ctype(values[i])
+            commands.append(('color', color))
             commands.append(('sleep', period))
 
         self.do(commands, count)
 
 
 class Color(object):
-    color_names = {
-        'red':    (255, 0, 0),
-        'green':  (0, 255, 0),
-        'blue':   (0, 0, 255),
-        'yellow': (255, 255, 0),
-        'purple': (255, 0, 255),
-        'cyan':   (0, 255, 255),
-        'white':  (255, 255, 255),
-        'black':  (0, 0, 0),
-    }
-
     def __init__(self):
         pass
 
     def __call__(self, arg):
-        return self.parse_color(arg)
-
-    def parse_color(self, color_string):
-        # hsv(h, s, v)
-        # red/green/blue/...
-        # #ff0000
-        rgb_range = IntRange(0, 255)
-        hue_range = IntRange(0, 360)
-        sat_range = IntRange(0, 100)
-        val_range = IntRange(0, 100)
-
-        # r g b
-        m = re.match(r'^(\d+) (\d+) (\d+)$', color_string)
-        if m:
-            return map(rgb_range, m.groups())
-
-        # rgb(r, g, b)
-        m = re.match(r'^rgb\s*\((\d+),\s*(\d+),\s*(\d+)\)$', color_string)
-        if m:
-            return map(rgb_range, m.groups())
-
-        # #rrggbb
-        m = re.match(r'^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$', color_string)
-        if m:
-            rgb = map(lambda h: int(h, 16), m.groups())
-            return rgb
-
-        # hsv(h, s, v)
-        m = re.match(r'^hsv\s*\((\d+),\s*(\d+),\s*(\d+)\)$', color_string)
-        if m:
-            hsv = (hue_range(m.group(1)) / 360.,
-                   sat_range(m.group(2)) / 100.,
-                   val_range(m.group(3)) / 100.)
-            rgb = colorsys.hsv_to_rgb(*hsv)
-            rgb = map(lambda i: int(i * 255), rgb)
-            return rgb
-
-        # color names
-        if color_string in self.color_names:
-            return self.color_names[color_string]
-
-        message = "unrecognized color '{}'".format(color_string)
-        raise argparse.ArgumentTypeError(message)
+        try:
+            return parse_color(arg)
+        except Exception as e:
+            raise argparse.ArgumentTypeError(*e.args)
 
 
 class IntRange(object):
