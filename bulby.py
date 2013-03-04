@@ -391,30 +391,30 @@ def main():
                     help='tone frequency in Hz')
     sp.set_defaults(command='tone')
 
-    # blink [-f frequency] <red> <green> <blue>
+    # blink [-f frequency] [-n times] [from_color] to_color
     sp = subparsers.add_parser('blink', help='blink color')
-    sp.add_argument('color1', type=Color(),
-                    help='the first color e.g. red, #ff0000, rgb(1.0, 0, 0) hsv(red), ...')
-    sp.add_argument('color2', type=Color(), nargs='?', default=rgb((0, 0, 0)),
-                    help='the second color (default: black)')
-    sp.add_argument('-f', '--frequency', type=float, default=2.0, metavar='F',
+    sp.add_argument('from_color', type=Color(), nargs='?', default=rgb((0, 0, 0)),
+                    help='the color to blink from (default: black)')
+    sp.add_argument('to_color', type=Color(),
+                    help='the color to blink to e.g. red, #ff0000, rgb(255,0,0), ...')
+    sp.add_argument('-f', '--frequency', type=float, default=2.0, metavar='FREQ',
                     help='blink frequency in Hz (default: %(default)s Hz)')
-    sp.add_argument('-n', '--times', type=int, default=-1, metavar='N',
+    sp.add_argument('-n', '--times', type=int, default=-1,
                     help='number of times to blink, N<0 blinks forever (default: %(default)s)')
     sp.set_defaults(command='blink')
 
-    # fade [-s speed] [-d direction] [-n times] from_color to_color
+    # fade [-s speed] [-d direction] [-n times] [from_color] to_color
     sp = subparsers.add_parser('fade', help='fade in color')
-    sp.add_argument('color1', type=Color(),
-                    help='the first color e.g. red, #ff0000, rgb(255,0,0), ...')
-    sp.add_argument('color2', type=Color(),
-                    help='the second color e.g. red, #ff0000, rgb(255,0,0), ...')
-    sp.add_argument('-s', '--speed', type=float, default=1.0, metavar='S',
+    sp.add_argument('from_color', type=Color(), nargs='?', default=rgb((0, 0, 0)),
+                    help='the color to fade from (default: black)')
+    sp.add_argument('to_color', type=Color(),
+                    help='the color to fade to e.g. red, #ff0000, rgb(255,0,0), ...')
+    sp.add_argument('-s', '--speed', type=float, default=1.0,
                     help='fade speed in 1/s (default: %(default)s)')
-    sp.add_argument('-d', '--direction', type=str, metavar='D',
+    sp.add_argument('-d', '--direction', type=str, metavar='DIR',
                     choices=('in', 'out', 'inout'), default='in',
                     help='fade direction: in, out or inout (default: %(default)s)')
-    sp.add_argument('-n', '--times', type=int, default=-1, metavar='N',
+    sp.add_argument('-n', '--times', type=int, default=-1,
                     help='number of times to fade in, N<0 fades forever (default: %(default)s)')
     sp.set_defaults(command='fade')
 
@@ -440,11 +440,11 @@ def main():
             bulby = Bulby()
 
             if args.command == 'color':
-                bulby.color(*args.color)
+                bulby.color(args.color)
             elif args.command == 'blink':
-                bulby.blink(args.color1, args.color2, args.frequency, args.times)
+                bulby.blink(args.from_color, args.to_color, args.frequency, args.times)
             elif args.command == 'fade':
-                bulby.fade(args.color1, args.color2, args.speed, args.direction, args.times)
+                bulby.fade(args.from_color, args.to_color, args.speed, args.direction, args.times)
             elif args.command == 'tone':
                 bulby.tone(args.frequency)
             else:
